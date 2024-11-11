@@ -1,3 +1,3 @@
 ﻿namespace ExpressionParser.Parser.Models;
 
-public class Token(string Characters, int Index, int Count, TokenType? OwnTokenType,  int? RelatedTokenTypeIndex);
+public sealed record Token(string Characters, int Index, TokenType? OwnTokenType,  int? RelatedTokenTypeIndex);
