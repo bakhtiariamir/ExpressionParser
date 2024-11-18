@@ -6,8 +6,7 @@ public class Phrase(string expression)
 
     public int TokenCount { get; set; } = 0;
 
-    public List<Token> Tokens { get; set; } = new();
-    
-    public Parameters Parameters { get; set; } 
-    
+    public List<Token> Tokens { get; set; } = [];
+
+    public Parameters Parameters { get; set; } = new();
 }

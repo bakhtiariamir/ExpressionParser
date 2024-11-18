@@ -3,8 +3,8 @@ namespace ExpressionParser.Expressions.Visitors;
 
 public class BinaryNode : Node
 {
-    public INode Left { get; set; }
-    public INode? Right { get; set; }
+    //public INode Left { get; set; }
+    //public INode? Right { get; set; }
 }
 
 public class BlockNode : Node

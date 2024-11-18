@@ -2,118 +2,233 @@
 using System.Text.RegularExpressions;
 using ExpressionParser.Extensions;
 using ExpressionParser.Parser.Models;
+using ExpressionParser.TreeStructure;
 
 namespace ExpressionParser.Parser.Operations;
 
 public class PhraseParser(string phrase)
 {
-    private readonly Phrase _phrase = new Phrase(phrase);
-
+    private readonly Phrase _phrase = new(phrase);
+    private readonly TokenTypeState _startToken = TokenState.Items.FirstOrDefault(item => item.Character == "(") ??
+                     throw new Exception("Start token is not exists");
+    private readonly TokenTypeState _endToken = TokenState.Items.FirstOrDefault(item => item.Character == ")") ??
+                                               throw new Exception("End token is not exists");
     public void Tokenize()
     {
-        var startParenthesesStack = new Stack<int>(); 
+        var startParenthesesStack = new Stack<int>();
         var tokenize = new List<Token>();
         _phrase.Expression = _phrase.Expression.RemoveSpace().Trim().CorrectManipulation();
         var length = _phrase.Expression.Length;
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
-            var startParentheses = TokenState.Items.FirstOrDefault(row => row.TokenType == TokenType.StartParentheses)
-                ?.Character ?? throw new ArgumentNullException();
-            var endParentheses = TokenState.Items.FirstOrDefault(row => row.TokenType == TokenType.EndParentheses)
-                ?.Character ?? throw new ArgumentNullException();            
-            
             foreach (var item in TokenState.Items)
             {
                 var countOfCharacter = item.Character.Length;
                 var token = _phrase.Expression.GetToken(countOfCharacter, i);
                 if (countOfCharacter > 1 && token.FirstOrDefault() != item.Character.FirstOrDefault())
                     break;
-                
+
                 var relatedTokenTypeIndex = 0;
                 if (StringExtensions.IsNumeric(token))
                 {
                     var number = _phrase.Expression.GetNumber(i, 1, out int diffIndex);
                     if (number != null)
                     {
-                        tokenize.Add(new Token(number, i,  TokenType.Number, relatedTokenTypeIndex));
+                        tokenize.Add(new Token(number, i, TokenType.Number, relatedTokenTypeIndex));
                         if (diffIndex >= 1)
                         {
-                            i = i + (diffIndex-1) == 0 ? 1 : i = (diffIndex-1)+ i;
+                            i = i + (diffIndex - 1) == 0 ? 1 : i = (diffIndex - 1) + i;
                         }
+
                         break;
                     }
                     else
                     {
-                        tokenize.Add(new Token(item.Character, 0,GetTokenType(item.Character), relatedTokenTypeIndex));
+                        tokenize.Add(new Token(item.Character, 0, TokenExtensions.GetTokenType(item.Character), relatedTokenTypeIndex));
                         break;
                     }
                 }
-                else if (string.Equals(item.Character, token , StringComparison.CurrentCultureIgnoreCase))
+                else if (string.Equals(item.Character, token, StringComparison.CurrentCultureIgnoreCase))
                 {
                     var diffIndex = countOfCharacter - 1;
                     if (diffIndex > 1)
                     {
-                        i = i + diffIndex  == 0 ? 1 : i + diffIndex;
+                        i = i + diffIndex == 0 ? 1 : i + diffIndex;
                     }
-                    if (item.Character == endParentheses)
+
+                    if (item.Character == _endToken.Character)
                     {
                         relatedTokenTypeIndex = startParenthesesStack.Pop();
-                        tokenize.Add(new Token(item.Character, i,GetTokenType(item.Character), relatedTokenTypeIndex));
+                        tokenize.Add(new Token(item.Character, i, TokenExtensions.GetTokenType(item.Character), relatedTokenTypeIndex));
                         break;
                     }
-                    else if (item.Character == startParentheses)
+                    else if (item.Character == _startToken.Character)
                     {
                         startParenthesesStack.Push(i);
-                        tokenize.Add(new Token(item.Character, startParenthesesStack.Count+1, GetTokenType(item.Character), relatedTokenTypeIndex));
+                        tokenize.Add(new Token(item.Character, startParenthesesStack.Count + 1,
+                            TokenExtensions.GetTokenType(item.Character), relatedTokenTypeIndex));
                         break;
                     }
                     else
                     {
-                        tokenize.Add(new Token(item.Character, 0,GetTokenType(item.Character), relatedTokenTypeIndex));
+                        tokenize.Add(new Token(item.Character, 0, TokenExtensions.GetTokenType(item.Character), relatedTokenTypeIndex));
                         break;
                     }
                 }
-            } 
+            }
         }
+
         _phrase.Tokens = tokenize;
         _phrase.TokenCount = tokenize.Count;
     }
 
-    public void Parameterize(int level = 1)
+    public void Parameterize()
     {
-        var startToken = TokenState.Items.FirstOrDefault(item => item.Character == "(") ??
-                         throw new Exception("Start token is not exists");
-        var endToken = TokenState.Items.FirstOrDefault(item => item.Character == ")") ??
-                         throw new Exception("End token is not exists");
-        var checkParameter = _phrase.Parameters.Phrase.Contains('(');
-        if (checkParameter)
+        for (var i = 0; i < _phrase.TokenCount; i++)
         {
-            var firstParentheses = _phrase.Tokens.FirstOrDefault(item => item.Characters == startToken.Character) ??
-                                   throw new Exception("Start token not exists");
-            var endParentheses = _phrase.Tokens.FirstOrDefault(item => item.Characters == endToken.Character) ??   
-                         throw new Exception("Start token is not exists");
-            if (!_phrase.Parameters.Phrase.Substring(firstParentheses.Index + 1, endParentheses.Index - 1)
-                .Contains(startToken.Character))
+            if (_phrase.Tokens[i].OwnTokenType == _startToken.TokenType)
             {
-                var tokens = _phrase.Tokens
-                    .Where(item => item.OwnTokenType != TokenType.Number)
-                    .Join(TokenState.TokenPriorities, token => token.OwnTokenType, priority => priority.Token,
-                        (token, priority) => new
-                        {
-                            Token = token.OwnTokenType,
-                            RelatedToken = token.RelatedTokenTypeIndex,
-                            Character = token.Characters,
-                            Priority = priority.Priority,
-                            Associativity = priority.Associativity
-                        }).ToList().OrderBy(item => item.Priority);
-                foreach (var token in tokens)
+                for (var j = i+1; j < _phrase.TokenCount; j++)
                 {
-                    
+                    if (_phrase.Tokens[j].OwnTokenType == _endToken.TokenType)
+                    {
+                        var startIndex = i + 1;
+                        var endIndex = j - 1;
+                        ContentNormalize(startIndex, endIndex);
+                    }
+                    else if (_phrase.Tokens[j].OwnTokenType == _startToken.TokenType)
+                    {
+                     break;   
+                    }
+                    else
+                    {
+                        //check if has not end parentheses
+                    }
                 }
             }
-            
-            
-            
+        }
+        
+        if (_phrase.Expression.Contains(_startToken.Character))
+            Parameterize();
+    }
+
+    public void ContentNormalize(int startIndex, int endIndex, Node<ParameterScope> node, int level = 1)
+    {
+        if (_phrase.Parameters.Phrase.Contains(_startToken.Character))
+        {
+                if (!_phrase.Parameters.Phrase.Substring(startIndex + 1, endIndex - 1)
+                        .Contains(_startToken.Character))
+                {
+                    var tokens = _phrase.Tokens
+                        .Where(item => item.OwnTokenType != TokenType.Number)
+                        .Join(TokenState.TokenPriorities, token => token.OwnTokenType, priority => priority.Token,
+                            (token, priority) => new
+                            {
+                                Token = token.OwnTokenType,
+                                RelatedToken = token.RelatedTokenTypeIndex,
+                                Character = token.Characters,
+                                Priority = priority.Priority,
+                                Associativity = priority.Associativity
+                            }).ToList().OrderBy(item => item.Priority).ToList();
+                    var tokenLength = tokens?.Count;
+                    if (tokens is { Count: > 0 })
+                    {
+                        for (var i = 0; i < tokenLength; i++)
+                        {
+                            var token = tokens[i];
+                            if (token.Associativity == Associativity.LeftToRight)
+                            {
+                                if (node.LeftIsNull())
+                                {
+                                    var right = new object();
+                                    var left = new object();
+                                    var center = new object();
+                                    if (i - 1 <= endParentheses.Index && i - 1 >= firstParentheses.Index)
+                                    { 
+                                        left = new
+                                        {
+                                            Token = _phrase.Tokens[i - 1],
+                                        };
+                                    }
+                                    else
+                                    {
+                                        throw new Exception("Left token cannot be null.");
+                                    }
+                                
+                                    center = new
+                                    {
+                                        Token = _phrase.Tokens[i]
+                                    };
+
+                                    if (i + 1 <= endParentheses.Index && i + 1 >= firstParentheses.Index)
+                                    {
+                                        right = new
+                                        {
+                                            Token = _phrase.Tokens[i + 1]
+                                        };
+                                    }
+                                
+                                    node = new
+                                    {
+                                        Left = left,
+                                        Center = center,
+                                        Right = right
+                                    };
+                                }
+                                else if (node.Right == null)
+                                {
+                                    
+                                }
+                                else
+                                {
+                                    
+                                }
+                                
+                                
+                                ////
+
+                            }
+                            else
+                            {
+                                var right = new object();
+                                var left = new object();
+                                var center = new object();
+                                if (i - 1 <= endParentheses.Index && i - 1 >= firstParentheses.Index)
+                                { 
+                                    right = new
+                                    {
+                                        Token = _phrase.Tokens[i - 1],
+                                    };
+                                }
+                                else
+                                {
+                                    throw new Exception("Right token cannot be null.");
+                                }
+                                
+                                center = new
+                                {
+                                    Token = _phrase.Tokens[i]
+                                };
+
+                                if (i + 1 <= endParentheses.Index && i + 1 >= firstParentheses.Index)
+                                {
+                                    left = new
+                                    {
+                                        Token = _phrase.Tokens[i + 1]
+                                    };
+                                }
+                                
+                                node = new
+                                {
+                                    Left = left,
+                                    Center = center,
+                                    Right = right
+                                };
+                            }
+                        }   
+                    }
+                }
+
             var startParentheses = TokenState.Items.FirstOrDefault(row => row.TokenType == TokenType.StartParentheses)
                 ?.Character ?? throw new ArgumentNullException();
 
@@ -155,28 +270,15 @@ public class PhraseParser(string phrase)
                     _phrase.Parameters = new Parameters()
                     {
                         Scopes = scopes
-                    };   
+                    };
                 }
                 else
                 {
                     return;
                 }
             }
-                
         }
-
     }
-
-    private static TokenType? GetTokenType(string character) => TokenState.Items.FirstOrDefault(item => item.Character.ToLower() == character)!.TokenType;
-
-    public TokenType? RelatedTokenType(string character)
-    {
-        if (character.ToLower() == ")")
-            return TokenState.Items.FirstOrDefault(item => item.Character.ToLower() == "(")!.TokenType;
-
-        return default;
-    }
-
 
 
 }

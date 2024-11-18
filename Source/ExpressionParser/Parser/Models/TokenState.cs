@@ -141,9 +141,5 @@ public static class TokenState
         //new TokenPriority(TokenType.StartParentheses, new CategoryOperands("Assignment", ">>="), 1, Associativity.LeftToRight),
         //new TokenPriority(TokenType.StartParentheses, new CategoryOperands("Assignment", "<<="), 1, Associativity.LeftToRight),
         //new TokenPriority(TokenType.StartParentheses, new CategoryOperands("Assignment", "&="), 1, Associativity.LeftToRight),
-        
-        
-        
     ];
-
 }
